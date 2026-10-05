@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.enums import DeliveryStatus, PlatformType, SenderPolicy
 
 T = TypeVar("T")
+
+EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 # ---------------------------------------------------------
@@ -29,12 +31,12 @@ class PaginatedResponse(BaseModel, Generic[T]):
 # User Schemas
 # ---------------------------------------------------------
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str = Field(..., pattern=EMAIL_REGEX, description="User email address")
     password: str = Field(min_length=6, max_length=128)
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str = Field(..., pattern=EMAIL_REGEX, description="User email address")
     password: str
 
 
@@ -42,7 +44,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    email: EmailStr
+    email: str
     is_active: bool
     created_at: datetime
 

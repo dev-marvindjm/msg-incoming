@@ -67,14 +67,21 @@ class TelethonService:
 
         try:
             logger.info("Connecting Telethon MTProto client...")
-            if settings.TELEGRAM_BOT_TOKEN:
-                await self.client.start(bot_token=settings.TELEGRAM_BOT_TOKEN)
-            else:
-                await self.client.start()
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                if settings.TELEGRAM_BOT_TOKEN:
+                    logger.info("Authorizing Telethon client with Telegram Bot Token...")
+                    await self.client.start(bot_token=settings.TELEGRAM_BOT_TOKEN)
+                else:
+                    logger.warning(
+                        "Telethon MTProto client connected to Telegram servers, but session is not authorized yet. "
+                        "To activate live incoming Telegram events, provide TELEGRAM_BOT_TOKEN or a valid TELEGRAM_SESSION_STRING / .session file in /app/sessions."
+                    )
+                    return
 
             me = await self.client.get_me()
             logger.info(
-                f"Telethon connected successfully as: {getattr(me, 'first_name', '')} "
+                f"Telethon connected and authorized as: {getattr(me, 'first_name', '')} "
                 f"(@{getattr(me, 'username', 'no_username')}, ID: {getattr(me, 'id', 'unknown')})"
             )
 
