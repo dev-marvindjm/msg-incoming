@@ -56,8 +56,10 @@ services:
       TELEGRAM_SESSION_STRING: ${TELEGRAM_SESSION_STRING:-}
       TELEGRAM_SESSIONS_DIR: /app/sessions
       TELEGRAM_AUTO_START: ${TELEGRAM_AUTO_START:-true}
+      TELEGRAM_OWNER_EMAIL: ${TELEGRAM_OWNER_EMAIL:-}
       SECRET_KEY: ${SECRET_KEY:-quant-secure-jwt-key-2026}
       BROKER_API_URL: ${BROKER_API_URL:-http://metatrader5-quant-server:8000}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       RUST_APP_URL: ${RUST_APP_URL:-http://rust-app:3000}
     volumes:
       # Persistent volume for Telethon session files (.session)

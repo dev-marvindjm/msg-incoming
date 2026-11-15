@@ -128,8 +128,8 @@ class IngestedMessage(SQLModel, table=True):
     __tablename__ = "ingested_messages"
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "platform", "external_message_id",
-            name="uq_message_per_user_platform_msg_id"
+            "user_id", "platform", "chat_id", "external_message_id",
+            name="uq_message_per_user_platform_chat_msg_id"
         ),
     )
 
@@ -141,6 +141,12 @@ class IngestedMessage(SQLModel, table=True):
         ondelete="CASCADE",
     )
     platform: PlatformType = Field(index=True, nullable=False)
+    chat_id: Optional[str] = Field(
+        default=None,
+        index=True,
+        nullable=True,
+        description="ID del chat o canal de origen (ej. Telegram chat_id)",
+    )
     external_message_id: str = Field(
         index=True,
         nullable=False,

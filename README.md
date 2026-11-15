@@ -21,7 +21,7 @@ flowchart TD
     end
 
     subgraph "Downstream Trading Pipeline"
-        MT5["MetaTrader 5 Quant Server\n(POST /api/v1/signals/receive)"]
+        MT5["MetaTrader 5 Quant Server\n(POST /api/v1/operations/ingest)"]
         RustApp["Rust Management Hub\n(POST /api/senders)"]
     end
 
@@ -59,7 +59,7 @@ flowchart TD
    - Cada operador dispone de un `user_id: UUID` propio indexado con borrado en cascada (`ondelete="CASCADE"`).
    - **Restricciones de Unicidad Compuestas**:
      - `UniqueConstraint("user_id", "platform", "entity_id")` en reglas de emisor.
-     - `UniqueConstraint("user_id", "platform", "external_message_id")` en mensajes auditados.
+     - `UniqueConstraint("user_id", "platform", "chat_id", "external_message_id")` en mensajes auditados.
    - Dos operadores pueden monitorear el mismo canal de Telegram con políticas opuestas (ej. Usuario A en `ALLOW` y Usuario B en `BLOCK`) de manera 100% aislada.
 
 4. **Patrón Funcional Result / Either**:
@@ -137,6 +137,7 @@ cp .env.example .env
 | `TELEGRAM_SESSION_NAME` | Nombre base del archivo `.session` | `msg_ingestor` |
 | `TELEGRAM_SESSION_STRING` | StringSession para contenedores sin disco persistente | *(Opcional)* |
 | `TELEGRAM_SESSIONS_DIR` | Directorio local/montado para archivos `.session` | `/app/sessions` |
+| `TELEGRAM_OWNER_EMAIL` | Email del usuario propietario al que se enrutan los eventos de la sesión Telethon (Fase 1). Si está vacío, se despacha a todos los usuarios activos | `admin@quant.com` *(Opcional)* |
 | `POSTGRES_USER` | Usuario de PostgreSQL | `admin` |
 | `POSTGRES_PASSWORD` | Contraseña de PostgreSQL | `quant_secure_pwd` |
 | `POSTGRES_HOST` | Host del servidor PostgreSQL | `postgres` (en Docker) o `localhost` |
@@ -146,6 +147,7 @@ cp .env.example .env
 | `DEFAULT_ADMIN_EMAIL` | Correo del usuario administrador inicial | `admin@quant.com` |
 | `DEFAULT_ADMIN_PASSWORD` | Contraseña del admin inicial | `AdminPasswordSecure2026!` |
 | `BROKER_API_URL` | URL de `metatrader5-quant-server-python` | `http://metatrader5-quant-server:8000` |
+| `INTERNAL_API_KEY` | Clave interna compartida (`X-Internal-Key`) para autenticar la ingesta en `POST /api/v1/operations/ingest` | `quant-internal-service-key-2026` |
 | `RUST_APP_URL` | URL del servidor web en Rust | `http://rust-app:3000` |
 
 ---

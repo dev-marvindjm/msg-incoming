@@ -54,6 +54,7 @@ async def ingest_webhook_message(
         emit_res = await broker_emitter.emit_to_trading_engine(
             user_id=current_user.id,
             message=ingested_msg,
+            owner_email=current_user.email,
         )
         if emit_res.is_ok():
             broker_res_data = emit_res.unwrap()

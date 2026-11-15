@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     )
     TELEGRAM_SESSIONS_DIR: str = Field(default="./sessions", description="Directory for persistent .session files")
     TELEGRAM_AUTO_START: bool = Field(default=True, description="Attempt client start on app lifespan boot if API credentials exist")
+    TELEGRAM_OWNER_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Optional owner email to scope Telethon messages to a single active user (Phase 1 multi-user)",
+    )
 
     # Downstream Broker Execution & Dispatch Pipeline
     BROKER_API_URL: str = Field(
@@ -72,6 +76,10 @@ class Settings(BaseSettings):
         description="Endpoint for metatrader5-quant-server or execution engine",
     )
     BROKER_API_KEY: Optional[str] = Field(default=None, description="Optional X-API-Key for broker service auth")
+    INTERNAL_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Shared internal service key (X-Internal-Key) for quant operations ingest",
+    )
     DISPATCH_TIMEOUT_SECONDS: float = Field(default=5.0, description="HTTP timeout for dispatching signals to brokers")
     RUST_APP_URL: Optional[str] = Field(default="http://localhost:3000", description="Optional Rust web server endpoint")
 

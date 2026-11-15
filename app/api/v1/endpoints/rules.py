@@ -6,7 +6,7 @@ from sqlmodel import col, desc, select
 from app.core.database import SessionDep
 from app.core.security import UserDep
 from app.domain.enums import PlatformType, SenderPolicy
-from app.domain.models import GlobalFilterConfig, SenderRule
+from app.domain.models import GlobalFilterConfig, SenderRule, User
 from app.domain.schemas import (
     ApiResponse,
     GlobalFilterConfigResponse,
@@ -238,37 +238,59 @@ async def update_global_filter_config(
     config_in: GlobalFilterConfigUpdate,
     current_user: UserDep,
     session: SessionDep,
+    apply_to_all_users: bool = Query(True, description="Aplicar a todos los operadores"),
 ):
     """
     Dynamically updates the global filtering policy (`allow_any_sender`, `strict_whitelist`)
-    without restarting the service.
+    without restarting the service. Optionally applies the configuration to all active operators.
     """
-    stmt = select(GlobalFilterConfig).where(
-        GlobalFilterConfig.user_id == current_user.id,
-        GlobalFilterConfig.platform == config_in.platform,
-    )
-    result = await session.exec(stmt)
-    config = result.first()
-
     now = datetime.now(timezone.utc)
 
-    if not config:
-        config = GlobalFilterConfig(
-            user_id=current_user.id,
-            platform=config_in.platform,
-            allow_any_sender=config_in.allow_any_sender if config_in.allow_any_sender is not None else False,
-            strict_whitelist=config_in.strict_whitelist if config_in.strict_whitelist is not None else False,
-            updated_at=now,
-        )
+    if apply_to_all_users:
+        users_stmt = select(User).where(User.is_active == True)  # noqa: E712
+        users_res = await session.exec(users_stmt)
+        users = users_res.all()
     else:
-        if config_in.allow_any_sender is not None:
-            config.allow_any_sender = config_in.allow_any_sender
-        if config_in.strict_whitelist is not None:
-            config.strict_whitelist = config_in.strict_whitelist
-        config.updated_at = now
+        users = [current_user]
 
-    session.add(config)
+    primary_config = None
+    for user in users:
+        stmt = select(GlobalFilterConfig).where(
+            GlobalFilterConfig.user_id == user.id,
+            GlobalFilterConfig.platform == config_in.platform,
+        )
+        result = await session.exec(stmt)
+        config = result.first()
+
+        if not config:
+            config = GlobalFilterConfig(
+                user_id=user.id,
+                platform=config_in.platform,
+                allow_any_sender=config_in.allow_any_sender if config_in.allow_any_sender is not None else False,
+                strict_whitelist=config_in.strict_whitelist if config_in.strict_whitelist is not None else False,
+                updated_at=now,
+            )
+        else:
+            if config_in.allow_any_sender is not None:
+                config.allow_any_sender = config_in.allow_any_sender
+            if config_in.strict_whitelist is not None:
+                config.strict_whitelist = config_in.strict_whitelist
+            config.updated_at = now
+
+        session.add(config)
+        if user.id == current_user.id:
+            primary_config = config
+
     await session.commit()
-    await session.refresh(config)
+    if primary_config:
+        await session.refresh(primary_config)
+    else:
+        # Fallback if current_user wasn't matched in users list
+        stmt = select(GlobalFilterConfig).where(
+            GlobalFilterConfig.user_id == current_user.id,
+            GlobalFilterConfig.platform == config_in.platform,
+        )
+        result = await session.exec(stmt)
+        primary_config = result.first()
 
-    return ApiResponse(data=GlobalFilterConfigResponse.model_validate(config))
+    return ApiResponse(data=GlobalFilterConfigResponse.model_validate(primary_config))

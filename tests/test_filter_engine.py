@@ -1,5 +1,4 @@
 import pytest
-from uuid import uuid4
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
@@ -26,6 +25,7 @@ async def test_filter_engine_allow_policy(db_session: AsyncSession, user_a: User
 
     payload = WebhookMessageCreate(
         platform=PlatformType.TELEGRAM,
+        chat_id="-1001234567890",
         external_message_id="msg_001",
         sender_id="-1001234567890",
         sender_username="vip_forex_signals",
@@ -37,6 +37,7 @@ async def test_filter_engine_allow_policy(db_session: AsyncSession, user_a: User
     message, should_forward, is_duplicate = res.unwrap()
 
     assert message.delivery_status == DeliveryStatus.EMITTED
+    assert message.chat_id == "-1001234567890"
     assert message.block_reason is None
     assert should_forward is True
     assert is_duplicate is False
@@ -77,7 +78,6 @@ async def test_filter_engine_block_policy(db_session: AsyncSession, user_a: User
 @pytest.mark.asyncio
 async def test_filter_engine_strict_whitelist_ignores_unlisted(db_session: AsyncSession, user_a: User):
     """When strict_whitelist=True, unlisted senders are IGNORED."""
-    # Update global config for user_a
     stmt = select(GlobalFilterConfig).where(
         GlobalFilterConfig.user_id == user_a.id,
         GlobalFilterConfig.platform == PlatformType.TELEGRAM,
@@ -107,7 +107,6 @@ async def test_filter_engine_strict_whitelist_ignores_unlisted(db_session: Async
 @pytest.mark.asyncio
 async def test_filter_engine_allow_any_sender_dynamic(db_session: AsyncSession, user_a: User):
     """When allow_any_sender=True, any unblocked sender is EMITTED."""
-    # Update global config for user_a
     stmt = select(GlobalFilterConfig).where(
         GlobalFilterConfig.user_id == user_a.id,
         GlobalFilterConfig.platform == PlatformType.THREADS,
@@ -136,9 +135,10 @@ async def test_filter_engine_allow_any_sender_dynamic(db_session: AsyncSession, 
 
 @pytest.mark.asyncio
 async def test_filter_engine_idempotency_per_user(db_session: AsyncSession, user_a: User):
-    """Duplicate message with same external_message_id is not re-processed."""
+    """Duplicate message with same (chat_id, external_message_id) is not re-processed."""
     payload = WebhookMessageCreate(
         platform=PlatformType.TELEGRAM,
+        chat_id="-100555000",
         external_message_id="unique_msg_100",
         sender_id="sender_alpha",
         raw_text="Test message",
@@ -148,14 +148,65 @@ async def test_filter_engine_idempotency_per_user(db_session: AsyncSession, user
     assert res1.is_ok()
     msg1, should_forward1, is_duplicate1 = res1.unwrap()
     assert is_duplicate1 is False
+    assert msg1.chat_id == "-100555000"
 
-    # Second ingestion attempt of the same message for user_a
+    # Second ingestion attempt of the same chat_id + external_message_id for user_a
     res2 = await filter_engine.ingest_and_evaluate(user_a.id, payload, db_session)
     assert res2.is_ok()
     msg2, should_forward2, is_duplicate2 = res2.unwrap()
     assert is_duplicate2 is True
     assert should_forward2 is False
     assert msg1.id == msg2.id
+
+
+@pytest.mark.asyncio
+async def test_filter_engine_same_external_id_different_chats_not_duplicate(
+    db_session: AsyncSession,
+    user_a: User,
+):
+    """
+    Same external_message_id arriving in two different Telegram chats for the same user
+    must both be persisted and evaluated independently (not treated as duplicates).
+    """
+    stmt = select(GlobalFilterConfig).where(
+        GlobalFilterConfig.user_id == user_a.id,
+        GlobalFilterConfig.platform == PlatformType.TELEGRAM,
+    )
+    res = await db_session.exec(stmt)
+    cfg = res.first()
+    cfg.allow_any_sender = True
+    db_session.add(cfg)
+    await db_session.commit()
+
+    payload_chat_1 = WebhookMessageCreate(
+        platform=PlatformType.TELEGRAM,
+        chat_id="-1001111111",
+        external_message_id="42",
+        sender_id="-1001111111",
+        raw_text="EURUSD CALL 5M from chat 1",
+    )
+    payload_chat_2 = WebhookMessageCreate(
+        platform=PlatformType.TELEGRAM,
+        chat_id="-1002222222",
+        external_message_id="42",
+        sender_id="-1002222222",
+        raw_text="GBPUSD PUT 5M from chat 2",
+    )
+
+    res1 = await filter_engine.ingest_and_evaluate(user_a.id, payload_chat_1, db_session)
+    assert res1.is_ok()
+    msg1, forward1, dup1 = res1.unwrap()
+    assert dup1 is False
+    assert forward1 is True
+    assert msg1.chat_id == "-1001111111"
+
+    res2 = await filter_engine.ingest_and_evaluate(user_a.id, payload_chat_2, db_session)
+    assert res2.is_ok()
+    msg2, forward2, dup2 = res2.unwrap()
+    assert dup2 is False
+    assert forward2 is True
+    assert msg2.chat_id == "-1002222222"
+    assert msg1.id != msg2.id
 
 
 @pytest.mark.asyncio
@@ -166,7 +217,6 @@ async def test_multi_user_tenancy_isolation(db_session: AsyncSession, user_a: Us
     """
     channel_id = "-10088888888"
 
-    # User A allows channel
     rule_a = SenderRule(
         user_id=user_a.id,
         platform=PlatformType.TELEGRAM,
@@ -174,7 +224,6 @@ async def test_multi_user_tenancy_isolation(db_session: AsyncSession, user_a: Us
         policy=SenderPolicy.ALLOW,
         is_active=True,
     )
-    # User B blocks same channel
     rule_b = SenderRule(
         user_id=user_b.id,
         platform=PlatformType.TELEGRAM,
@@ -187,6 +236,7 @@ async def test_multi_user_tenancy_isolation(db_session: AsyncSession, user_a: Us
 
     payload = WebhookMessageCreate(
         platform=PlatformType.TELEGRAM,
+        chat_id=channel_id,
         external_message_id="shared_telegram_msg_777",
         sender_id=channel_id,
         raw_text="BUY GBPUSD 1.2700",
@@ -198,7 +248,7 @@ async def test_multi_user_tenancy_isolation(db_session: AsyncSession, user_a: Us
     assert msg_a.delivery_status == DeliveryStatus.EMITTED
     assert forward_a is True
 
-    # Ingest for User B (with same external_message_id, proving composite uniqueness per user)
+    # Ingest for User B (with same chat_id + external_message_id, proving composite uniqueness per user)
     res_b = await filter_engine.ingest_and_evaluate(user_b.id, payload, db_session)
     msg_b, forward_b, _ = res_b.unwrap()
     assert msg_b.delivery_status == DeliveryStatus.BLOCKED

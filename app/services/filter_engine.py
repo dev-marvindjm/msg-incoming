@@ -101,17 +101,6 @@ class FilterEngine:
             # If policy is DEFAULT, fall through to GlobalFilterConfig evaluation
 
         # B. Fallback to GlobalFilterConfig
-        if strict_whitelist:
-            logger.info(
-                f"User {user_id}: Sender {sender_id} (@{sender_username}) IGNORED (strict_whitelist active, not in ALLOW)"
-            )
-            return FilterDecision(
-                delivery_status=DeliveryStatus.IGNORED,
-                block_reason="NOT_IN_WHITELIST",
-                should_forward=False,
-                matched_rule=matched_rule,
-            )
-
         if allow_any_sender:
             logger.info(
                 f"User {user_id}: Sender {sender_id} (@{sender_username}) EMITTED (allow_any_sender active, unblocked)"
@@ -120,6 +109,17 @@ class FilterEngine:
                 delivery_status=DeliveryStatus.EMITTED,
                 block_reason=None,
                 should_forward=True,
+                matched_rule=matched_rule,
+            )
+
+        if strict_whitelist:
+            logger.info(
+                f"User {user_id}: Sender {sender_id} (@{sender_username}) IGNORED (strict_whitelist active, not in ALLOW)"
+            )
+            return FilterDecision(
+                delivery_status=DeliveryStatus.IGNORED,
+                block_reason="NOT_IN_WHITELIST",
+                should_forward=False,
                 matched_rule=matched_rule,
             )
 
@@ -145,10 +145,18 @@ class FilterEngine:
         Returns Result with (IngestedMessage, should_forward, is_duplicate).
         """
         try:
-            # 1. Idempotency Check: (user_id, platform, external_message_id)
+            raw_chat_id = (
+                payload.chat_id
+                or (payload.metadata_json or {}).get("chat_id")
+                or payload.sender_id
+            )
+            resolved_chat_id = str(raw_chat_id) if raw_chat_id is not None else None
+
+            # 1. Idempotency Check: (user_id, platform, chat_id, external_message_id)
             existing_stmt = select(IngestedMessage).where(
                 IngestedMessage.user_id == user_id,
                 IngestedMessage.platform == payload.platform,
+                IngestedMessage.chat_id == resolved_chat_id,
                 IngestedMessage.external_message_id == str(payload.external_message_id),
             )
             existing_res = await db.exec(existing_stmt)
@@ -157,7 +165,7 @@ class FilterEngine:
             if existing_message:
                 logger.info(
                     f"Duplicate message ignored for user {user_id}: "
-                    f"platform={payload.platform}, msg_id={payload.external_message_id}"
+                    f"platform={payload.platform}, chat_id={resolved_chat_id}, msg_id={payload.external_message_id}"
                 )
                 return Ok((existing_message, False, True))
 
@@ -174,6 +182,7 @@ class FilterEngine:
             ingested = IngestedMessage(
                 user_id=user_id,
                 platform=payload.platform,
+                chat_id=resolved_chat_id,
                 external_message_id=str(payload.external_message_id),
                 sender_id=str(payload.sender_id),
                 sender_username=payload.sender_username,

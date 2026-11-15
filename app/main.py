@@ -105,26 +105,8 @@ def create_app() -> FastAPI:
     # 6. Comprehensive Health & Readiness Check
     @application.get("/health", tags=["System"])
     async def health():
-        db_status = "unknown"
-        try:
-            async with async_session_maker() as session:
-                await session.exec(text("SELECT 1"))
-                db_status = "healthy"
-        except Exception as e:
-            db_status = f"unhealthy: {str(e)}"
-
-        telethon_connected = telethon_service.is_connected()
-
-        return {
-            "status": "healthy" if db_status == "healthy" else "degraded",
-            "database": db_status,
-            "telethon": {
-                "configured": bool(settings.TELEGRAM_API_ID and settings.TELEGRAM_API_HASH),
-                "connected": telethon_connected,
-            },
-            "broker_emitter_target": settings.BROKER_API_URL,
-            "rust_app_target": settings.RUST_APP_URL,
-        }
+        from app.core.health_checker import run_msg_health_check
+        return await run_msg_health_check()
 
     return application
 

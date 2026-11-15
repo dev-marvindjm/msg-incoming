@@ -114,6 +114,7 @@ class GlobalFilterConfigResponse(BaseModel):
 # ---------------------------------------------------------
 class WebhookMessageCreate(BaseModel):
     platform: PlatformType = Field(default=PlatformType.THREADS)
+    chat_id: Optional[str] = Field(default=None)
     external_message_id: str = Field(..., min_length=1)
     sender_id: str = Field(..., min_length=1)
     sender_username: Optional[str] = Field(None, max_length=255)
@@ -127,6 +128,7 @@ class IngestedMessageResponse(BaseModel):
     id: int
     user_id: UUID
     platform: PlatformType
+    chat_id: Optional[str] = None
     external_message_id: str
     sender_id: str
     sender_username: Optional[str]
